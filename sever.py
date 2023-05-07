@@ -1,143 +1,107 @@
 import socket
 import threading
 
-game_board = { '1': '   ', '2': '   ', '3': '   ',
-               '4': '   ', '5': '   ', '6': '   ',
-               '7': '   ', '8': '   ', '9': '   '}
+class TicTacToe:
+    def __init__(self):
+        self.board = [[" ", " ", " "], [" ", " ", " "], [" ", " ", " "]]
+        self.turn = "X"
+        self.you = "X"
+        self.opponent = "O"
+        self.winner = None
+        self.game_over = False
 
-board_space = []
-for key in game_board:
-    board_space.append(key)
+        self.counter  = 0
 
-# Create a TCP/IP socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    def host_game(self, host, port):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind((host, port))
+        server.listen(1)
 
-# get local machine name
-host = socket.gethostname()
+        client, addr = server.accept()
+        self.you = "X"
+        self.opponent = "O"
+        threading.Thread(target=self.handle_client, args=(client,)).start()
+        server.close()
 
-port = 9999
-
-# bind the socket to a public host, and a well-known port
-sock.bind((host, port))
-
-# Listen for incoming connections
-sock.listen(2)
-print('Waiting for a connection...')
-
-# Keep track of connected clients
-clients = []
-
-
-def printBoard(board):
-    print('\t'+ board['1'] + '|' + board['2'] + '|' + board['3'])
-    print('\t'+ '---+---+---')
-    print('\t'+ board['4'] + '|' + board['5'] + '|' + board['6'])
-    print('\t'+ '---+---+---')
-    print('\t'+ board['7'] + '|' + board['8'] + '|' + board['9'])
-
-
-def handle_client(conn, player):
-    # wait for both clients to connect and select their game pieces
-    if len(clients) < 2:
-        conn.send("Waiting for another player to connect...".encode())
-        return
-    turn = ''
-    while True:
-        if player == 1:
-            conn.send("Select your choice (O/X)?".encode())
-        choice = conn.recv(1024).decode()
-        if choice.capitalize() == 'X':
-            turn = 'X'
-            break
-        elif choice.capitalize() == 'O':
-            turn = 'O'
-            break
+    def connect_to_game(self, host, port):
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect((host, port))
+        self.you = "O"
+        self.opponent = "X"
+        threading.Thread(target=self.handle_client, args=(client,)).start()
+        
+    def check_valid_move(self, move):
+        if self.board[int(move[0])][int(move[1])] == " ":
+            return True
         else:
-            conn.send("Invalid input".encode())
-            continue
-
-    count = 0
-
-    while True:
-        printBoard(game_board)
-        if player == 1:
-            conn.send(f"It's your turn, Player( {turn} ). Move to which place?".encode())
-        move = conn.recv(1024).decode()
-        try:
-            if game_board[move] == '   ':
-                game_board[move] = f" {turn} "
-                count += 1
+            return False
+    
+    def handle_client(self, client):
+        while not self.game_over:
+            if self.turn == self.you:
+                move = input("Enter a move (row, column): ")
+                if self.check_valid_move(move.split(",")):
+                    self.apply_move(move.split(","), self.you)
+                    self.turn = self.opponent
+                    client.send(move.encode("utf-8"))
+                else:
+                    print("Invalid move.")
             else:
-                conn.send("That place is already filled.\nMove to which place?".encode())
-                continue
-        except:
-            conn.send("Invalid input!!!!".encode())
-            continue
-
-        if count >= 5:
-            if game_board['7'] == game_board['8'] == game_board['9'] != '   ':  # across the top
-                printBoard(game_board)
-                conn.send("\nGame Over.\n".encode())
-                conn.send(f" **** {turn} won. ****".encode())
-                break
-
-            elif game_board['4'] == game_board['5'] == game_board['6'] != '   ':  # across the middle
-                printBoard(game_board)
-                conn.send("\nGame Over.\n".encode())
-                conn.send(f" **** {turn} won. ****".encode())
-                break
-
-            elif game_board['1'] == game_board['2'] == game_board['3'] != '   ':  # across the bottom
-                printBoard(game_board)
-                conn.send("\nGame Over.\n".encode())
-                conn.send(f" **** {turn} won. ****".encode())
-                break
-
-            elif game_board['1'] == game_board['4'] == game_board['7'] != '   ':  # down the left side
-                printBoard(game_board)
-                conn.send("\nGame Over.\n".encode())
-                conn.send(f" **** {turn} won. ****".encode())
-                break
-            elif game_board['2'] == game_board['5'] == game_board['8'] != '   ':  # down the middle
-                printBoard(game_board)
-                conn.send("\nGame Over.\n".encode())
-                conn.send(f" **** {turn} won. ****".encode())
-                break
-            elif game_board['3'] == game_board['6'] == game_board['9'] != '   ':  # down the right side
-                printBoard(game_board)
-                conn.send("\nGame Over.\n".encode())
-                conn.send(f" **** {turn} won. ****".encode())
-                break
-            elif game_board['7'] == game_board['5'] == game_board['3'] != '   ': # diagonal
-                printBoard(game_board)
-                conn.send("\nGame Over.\n".encode())
-                conn.send(f" **** {turn} won. ****".encode())
-                break
-            elif game_board['1'] == game_board['5'] == game_board['9'] != '   ': # diagonal
-                printBoard(game_board)
-                conn.send("\nGame Over.\n".encode())
-                conn.send(f" **** {turn} won. ****".encode())
-                break
-            else:
-                if count == 9:
-                    conn.send("\nGame Over.\n".encode())
-                    conn.send("It's a Tie!!".encode())
+                data = client.recv(1024)
+                if not data:
+                    client.close()
                     break
+                else:
+                    self.apply_move(data.decode("utf-8").split(","), self.opponent)
+                    self.turn = self.you
+        client.close()
 
-try:
-    while True:
-        # wait for a connection
-        conn, addr = sock.accept()
-        print(f'Connected by {addr}')
-        
-        # add the new client to the clients list
-        clients.append(conn)
-        
-        # create a new thread to handle the client
-        client_thread = threading.Thread(target=handle_client, args=(conn, len(clients)))
-        client_thread.start()
+    def apply_move(self, move, player):
+        if self.game_over:
+            return
+        self.counter += 1
+        self.board[int(move[0])][int(move[1])] = player
 
-except KeyboardInterrupt:
-    # catch keyboard interruption and close the socket
-    print("Keyboard interrupt detected. Closing the port...")
-    sock.close()
+        self.print_board()
+
+        if self.check_win():
+            if self.winner == self.you:
+                print("You win!")
+                exit()
+            
+            elif self.winner == self.opponent:
+                print("You lose!")
+                exit()
+        else:
+            if self.counter ==9:
+                print("Tie game.")
+                exit()
+
+    def check_win(self):
+        for i in range(3):
+            if self.board[i][0] == self.board[i][1] == self.board[i][2] != " ":
+                self.winner = self.board[i][0]
+                self.game_over = True
+                return True
+            if self.board[0][i] == self.board[1][i] == self.board[2][i] != " ":
+                self.winner = self.board[0][i]
+                self.game_over = True
+                return True
+        if self.board[0][0] == self.board[1][1] == self.board[2][2] != " ":
+            self.winner = self.board[0][0]
+            self.game_over = True
+            return True
+        if self.board[0][2] == self.board[1][1] == self.board[2][0] != " ":
+            self.winner = self.board[0][2]
+            self.game_over = True
+            return True
+        return False
+    
+    def print_board(self):
+        for i in range(3):
+            print(" | ".join(self.board[i]))
+            if i != 2:
+                print("----------")
+
+game = TicTacToe()
+game.host_game("localhost", 9999)

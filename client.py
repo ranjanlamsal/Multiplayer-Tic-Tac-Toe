@@ -1,43 +1,104 @@
 import socket
+import threading
 
-# create a TCP/IP socket
-sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+class TicTacToe:
+    def __init__(self):
+        self.board  =[[" ", " ", " "], [" ", " ", " "], [" ", " ", " "]]
+        self.turn = "X"
+        self.you = "X"
+        self.opponent = "O"
+        self.winner = None
+        self.game_over = False
 
-# get local machine name
-host = socket.gethostname()
+        self.counter  = 0
 
-# set the port number to match the server's port
-port = 9999
+    def host_game(self, host, port):
+        server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        server.bind((host, port))
+        server.listen(1)
 
-# connect the socket to the server's IP address and port
-sock.connect((host, port))
+        client, addr = server.accept()
+        self.you = "X"
+        self.opponent = "O"
+        threading.Thread(target=self.handle_client, args=(client,)).start()
+        server.close()
 
-# receive the initial message from the server
-message = sock.recv(1024).decode()
-print(message)
+    def connect_to_game(self, host, port):
+        client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        client.connect((host, port))
+        self.you = "O"
+        self.opponent = "X"
+        threading.Thread(target=self.handle_client, args=(client,)).start()
+    
+    def handle_client(self, client):
+        while not self.game_over:
+            if self.turn == self.you:
+                move = input("Enter a move (row, column): ")
+                if self.check_valid_move(move.split(",")):
+                    self.apply_move(move.split(","), self.you)
+                    self.turn = self.opponent
+                    client.send(move.encode("utf-8"))
+                else:
+                    print("Invalid move.")
+            else:
+                data = client.recv(1024)
+                if not data:
+                    client.close()
+                    break
+                else:
+                    self.apply_move(data.decode("utf-8").split(","), self.opponent)
+                    self.turn = self.you
+        client.close()
 
-# send a message to the server to choose X or O
-choice = input()
-sock.send(choice.encode())
+    def apply_move(self, move, player):
+        if self.game_over:
+            return
+        self.counter += 1
+        self.board[int(move[0])][int(move[1])] = player
 
-# loop to play the game
-while True:
-    # receive the game board from the server and print it
-    board = sock.recv(1024).decode()
-    print(board)
+        self.print_board()
 
-    # check if the game is over
-    if "Game Over." in board:
-        break
+        if self.check_win():
+            if self.winner == self.you:
+                print("You win!")
+                exit()
+            
+            elif self.winner == self.opponent:
+                print("You lose!")
+                exit()
+        else:
+            if self.counter ==9:
+                print("Tie game.")
+                exit()
+    
+    def check_valid_move(self, move):
+        return self.board[int(move[0])][int(move[1])] == " "
+    
+    def check_win(self):
+        for i in range(3):
+            if self.board[i][0] == self.board[i][1] == self.board[i][2] != " ":
+                self.winner = self.board[i][0]
+                self.game_over = True
+                return True
+            if self.board[0][i] == self.board[1][i] == self.board[2][i] != " ":
+                self.winner = self.board[0][i]
+                self.game_over = True
+                return True
+        if self.board[0][0] == self.board[1][1] == self.board[2][2] != " ":
+            self.winner = self.board[0][0]
+            self.game_over = True
+            return True
+        if self.board[0][2] == self.board[1][1] == self.board[2][0] != " ":
+            self.winner = self.board[0][2]
+            self.game_over = True
+            return True
+        return False
+    
+    def print_board(self):
+        for i in range(3):
+            print(" | ".join(self.board[i]))
+            if i != 2:
+                print("-----")
 
-    # if it's the player's turn, ask for their move and send it to the server
-    if "your turn" in board:
-        move = input()
-        sock.send(move.encode())
-
-# receive the final message from the server and print it
-message = sock.recv(1024).decode()
-print(message)
-
-# close the socket
-sock.close()
+game = TicTacToe()
+game.connect_to_game("localhost", 9999)
